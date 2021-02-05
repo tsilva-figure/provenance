@@ -13,17 +13,13 @@ import (
 	"github.com/provenance-io/provenance/x/attribute/types"
 )
 
-const (
-	keyMaxValueLength = "maxvaluelength"
-)
-
 // ParamChanges defines the parameters that can be modified by param change proposals
 // on the simulation
 func ParamChanges(r *rand.Rand) []simtypes.ParamChange {
 	return []simtypes.ParamChange{
-		simulation.NewSimParamChange(types.ModuleName, keyMaxValueLength,
+		simulation.NewSimParamChange(types.ModuleName, string(types.ParamStoreKeyMaxValueLength),
 			func(r *rand.Rand) string {
-				return fmt.Sprintf("\"%v\"", GenMaxValueLength(r))
+				return fmt.Sprintf("%d", GenMaxValueLength(r))
 			},
 		),
 	}

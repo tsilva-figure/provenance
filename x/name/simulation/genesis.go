@@ -15,14 +15,6 @@ import (
 	"github.com/provenance-io/provenance/x/name/types"
 )
 
-// Simulation parameter constants
-const (
-	MaxSegmentLength       = "max_segment_length"
-	MinSegmentLength       = "min_segment_length"
-	MaxNameLevels          = "max_namne_levels"
-	AllowUnrestrictedNames = "allow_unrestricted_names"
-)
-
 // GenMaxSegmentLength randomized Max Segment Length
 func GenMaxSegmentLength(r *rand.Rand) uint32 {
 	return uint32(r.Intn(22) + 11) // ensures that max is always more than range of min values (1-11)
@@ -47,25 +39,25 @@ func GenAllowUnrestrictedNames(r *rand.Rand) bool {
 func RandomizedGenState(simState *module.SimulationState) {
 	var maxValueLength uint32
 	simState.AppParams.GetOrGenerate(
-		simState.Cdc, MaxSegmentLength, &maxValueLength, simState.Rand,
+		simState.Cdc, string(types.ParamStoreKeyMaxSegmentLength), &maxValueLength, simState.Rand,
 		func(r *rand.Rand) { maxValueLength = GenMaxSegmentLength(r) },
 	)
 
 	var maxNameLevels uint32
 	simState.AppParams.GetOrGenerate(
-		simState.Cdc, MaxSegmentLength, &maxNameLevels, simState.Rand,
+		simState.Cdc, string(types.ParamStoreKeyMaxNameLevels), &maxNameLevels, simState.Rand,
 		func(r *rand.Rand) { maxNameLevels = GenMaxNameLevels(r) },
 	)
 
 	var minValueLength uint32
 	simState.AppParams.GetOrGenerate(
-		simState.Cdc, MaxSegmentLength, &minValueLength, simState.Rand,
+		simState.Cdc, string(types.ParamStoreKeyMinSegmentLength), &minValueLength, simState.Rand,
 		func(r *rand.Rand) { minValueLength = GenMinSegmentLength(r) },
 	)
 
 	var allowUnrestrictedNames bool
 	simState.AppParams.GetOrGenerate(
-		simState.Cdc, AllowUnrestrictedNames, &allowUnrestrictedNames, simState.Rand,
+		simState.Cdc, string(types.ParamStoreKeyAllowUnrestrictedNames), &allowUnrestrictedNames, simState.Rand,
 		func(r *rand.Rand) { allowUnrestrictedNames = GenAllowUnrestrictedNames(r) },
 	)
 

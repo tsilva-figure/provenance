@@ -35,8 +35,8 @@ func TestParamChanges(t *testing.T) {
 			subspace:    nametypes.ModuleName,
 		},
 		{
-			composedKey: "name/unrestricednames",
-			key:         "unrestricednames",
+			composedKey: "name/allowunrestrictednames",
+			key:         "allowunrestrictednames",
 			subspace:    nametypes.ModuleName,
 		},
 	}
