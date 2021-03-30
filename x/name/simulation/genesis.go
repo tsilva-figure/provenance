@@ -19,7 +19,7 @@ import (
 const (
 	MaxSegmentLength       = "max_segment_length"
 	MinSegmentLength       = "min_segment_length"
-	MaxNameLevels          = "max_namne_levels"
+	MaxNameLevels          = "max_name_levels"
 	AllowUnrestrictedNames = "allow_unrestricted_names"
 )
 
@@ -53,13 +53,13 @@ func RandomizedGenState(simState *module.SimulationState) {
 
 	var maxNameLevels uint32
 	simState.AppParams.GetOrGenerate(
-		simState.Cdc, MaxSegmentLength, &maxNameLevels, simState.Rand,
+		simState.Cdc, MaxNameLevels, &maxNameLevels, simState.Rand,
 		func(r *rand.Rand) { maxNameLevels = GenMaxNameLevels(r) },
 	)
 
 	var minValueLength uint32
 	simState.AppParams.GetOrGenerate(
-		simState.Cdc, MaxSegmentLength, &minValueLength, simState.Rand,
+		simState.Cdc, MinSegmentLength, &minValueLength, simState.Rand,
 		func(r *rand.Rand) { minValueLength = GenMinSegmentLength(r) },
 	)
 
