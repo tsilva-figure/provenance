@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/provenance-io/provenance/internal/antewrapper"
 	"math/rand"
 
@@ -127,6 +128,7 @@ func (am AppModule) Route() sdk.Route {
 	return sdk.NewRoute(types.RouterKey, NewHandler(am.keeper))
 }
 
+// StatefulValidator returns a callback to use during ante validations.
 func (am AppModule) StatefulValidator() antewrapper.ValidateStateful {
 	return func (ctx sdk.Context, m sdk.Msg) error {
 		ctx.Logger().Info("ValidateStateful", "msg", m)
@@ -134,11 +136,11 @@ func (am AppModule) StatefulValidator() antewrapper.ValidateStateful {
 		switch msg := m.(type) {
 		case *types.MsgBindNameRequest:
 			if exists := am.keeper.NameExists(ctx, msg.Record.Name); exists {
-				return fmt.Errorf("stateful validate failure: name '%s' exists", msg.Record.Name)
+				return sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "name '%s' already exists", msg.Record.Name)
 			}
 		case *types.MsgDeleteNameRequest:
 			if exists := am.keeper.NameExists(ctx, msg.Record.Name); !exists {
-				return fmt.Errorf("stateful validate failure: name '%s' does not exist", msg.Record.Name)
+				return sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "name '%s' does not exist", msg.Record.Name)
 			}
 		}
 		return nil
