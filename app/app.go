@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/provenance-io/provenance/internal/antewrapper"
 	"io"
 	"net/http"
 	"os"
@@ -560,9 +561,10 @@ func New(
 	app.SetInitChainer(app.InitChainer)
 	app.SetBeginBlocker(app.BeginBlocker)
 	app.SetAnteHandler(
-		ante.NewAnteHandler(
+		antewrapper.NewAnteHandler(
 			app.AccountKeeper, app.BankKeeper, ante.DefaultSigVerificationGasConsumer,
 			encodingConfig.TxConfig.SignModeHandler(),
+			antewrapper.NewStatefulValidatorAnteDecorator(app.mm),
 		),
 	)
 	app.SetEndBlocker(app.EndBlocker)

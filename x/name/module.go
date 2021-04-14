@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/provenance-io/provenance/internal/antewrapper"
 	"math/rand"
 
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
@@ -124,6 +125,24 @@ func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {}
 // Route returns the message routing key for the distribution module.
 func (am AppModule) Route() sdk.Route {
 	return sdk.NewRoute(types.RouterKey, NewHandler(am.keeper))
+}
+
+func (am AppModule) StatefulValidator() antewrapper.ValidateStateful {
+	return func (ctx sdk.Context, m sdk.Msg) error {
+		ctx.Logger().Info("ValidateStateful", "msg", m)
+
+		switch msg := m.(type) {
+		case *types.MsgBindNameRequest:
+			if exists := am.keeper.NameExists(ctx, msg.Record.Name); exists {
+				return fmt.Errorf("stateful validate failure: name '%s' exists", msg.Record.Name)
+			}
+		case *types.MsgDeleteNameRequest:
+			if exists := am.keeper.NameExists(ctx, msg.Record.Name); !exists {
+				return fmt.Errorf("stateful validate failure: name '%s' does not exist", msg.Record.Name)
+			}
+		}
+		return nil
+	}
 }
 
 // QuerierRoute returns the distribution module's querier route name.
