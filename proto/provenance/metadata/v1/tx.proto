@@ -127,7 +127,7 @@ message MsgDeleteScopeRequest {
 // MsgDeleteScopeResponse is the response type for the Msg/DeleteScope RPC method.
 message MsgDeleteScopeResponse {}
 
-// MsgAddScopeDataAccessRequest is the request to add data access metaaddresses to scope
+// MsgAddScopeDataAccessRequest is the request to add data access AccAddresses to scope
 message MsgAddScopeDataAccessRequest {
   option (gogoproto.equal)            = false;
   option (gogoproto.goproto_stringer) = false;
@@ -141,16 +141,16 @@ message MsgAddScopeDataAccessRequest {
     (gogoproto.moretags)   = "yaml:\"scope_id\""
   ];
 
-  // bech32 address to be added to scope
+  // AccAddress to be added to scope
   repeated string data_access = 2 [(gogoproto.moretags) = "yaml:\"data_access\""];
   // signers is the list of address of those signing this request.
   repeated string signers = 3;
 }
 
-// MsgAddScopeDataAccessResponse is the response for adding data access metaaddresses to scope
+// MsgAddScopeDataAccessResponse is the response for adding data access AccAddresses to scope
 message MsgAddScopeDataAccessResponse {}
 
-// MsgDeleteScopeDataAccessRequest is the request to remove data access metaaddresses to scope
+// MsgDeleteScopeDataAccessRequest is the request to remove data access AccAddresses on a scope
 message MsgDeleteScopeDataAccessRequest {
   option (gogoproto.equal)            = false;
   option (gogoproto.goproto_stringer) = false;
@@ -164,13 +164,13 @@ message MsgDeleteScopeDataAccessRequest {
     (gogoproto.moretags)   = "yaml:\"scope_id\""
   ];
 
-  // bech32 address to be removed from scope
+  // AccAddress to be removed from scope
   repeated string data_access = 2 [(gogoproto.moretags) = "yaml:\"data_access\""];
-  // signers is the list of address of those signing this request.
+  // signers is the list of AccAddress of those signing this request.
   repeated string signers = 3;
 }
 
-// MsgDeleteScopeDataAccessResponse is the response from removing data access metaaddresses to scope
+// MsgDeleteScopeDataAccessResponse is the response from removing data access AccAddresses on a scope
 message MsgDeleteScopeDataAccessResponse {}
 
 // MsgWriteSessionRequest is the request type for the Msg/WriteSession RPC method.
