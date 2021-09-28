@@ -4,6 +4,8 @@ bin/
 build/
 config/
 !cmd/provenanced/config/
+!cmd/provenanced/config/legacy/tendermint_0_35/config
+!cmd/provenanced/config/legacy/tendermint_0_34/config
 data/
 .idea/
 *.swp
