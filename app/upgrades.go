@@ -28,6 +28,12 @@ type appUpgrade struct {
 }
 
 var handlers = map[string]appUpgrade{
+	"fredstest": {
+		Handler: func(app *App, ctx sdk.Context, plan upgradetypes.Plan) (module.VersionMap, error) {
+			print("fred's testing!!!!")
+			return make(module.VersionMap), nil
+		},
+	},
 	"eigengrau": {
 		Handler: func(app *App, ctx sdk.Context, plan upgradetypes.Plan) (module.VersionMap, error) {
 			panic("Upgrade height for eigengrau must be skipped.  Use `--unsafe-skip-upgrades <height>` flag to skip upgrade")
@@ -144,13 +150,13 @@ func CustomUpgradeStoreLoader(app *App, info storetypes.UpgradeInfo) baseapp.Sto
 				Deleted: upgrade.Deleted,
 			}
 
-			if isEmptyUpgrade(storeUpgrades) {
-				app.Logger().Info("No store upgrades required",
-					"plan", name,
-					"height", info.Height,
-				)
-				return nil
-			}
+			//if isEmptyUpgrade(storeUpgrades) {
+			//	app.Logger().Info("No store upgrades required",
+			//		"plan", name,
+			//		"height", info.Height,
+			//	)
+			//	return nil
+			//}
 
 			app.Logger().Info("Store upgrades",
 				"plan", name,
