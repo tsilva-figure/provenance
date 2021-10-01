@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 
 	v34config "github.com/provenance-io/provenance/cmd/provenanced/config/legacy/tendermint_0_34/config"
@@ -26,8 +28,8 @@ func (s *LegacyTestSuite) SetupTest() {
 	s.T().Logf("%s Home: %s", s.T().Name(), s.Home)
 }
 
-func containsString(a []string, s string) bool {
-	for _, t := range a {
+func stringSliceContains(ss []string, s string) bool {
+	for _, t := range ss {
 		if s == t {
 			return true
 		}
@@ -208,7 +210,7 @@ tx-index.psql-conn`, "\n")
 	inConfigButNotFile := make([]string, 0)
 	for v35key := range v35Map {
 		configEntries = append(configEntries, v35key)
-		if !stringsContains(fileEntries, v35key) {
+		if !stringSliceContains(fileEntries, v35key) {
 			inConfigButNotFile = append(inConfigButNotFile, v35key)
 		}
 	}
@@ -216,7 +218,7 @@ tx-index.psql-conn`, "\n")
 
 	inFileButNotConfig := make([]string, 0)
 	for _, fileKey := range fileEntries {
-		if !stringsContains(configEntries, fileKey) {
+		if !stringSliceContains(configEntries, fileKey) {
 			inFileButNotConfig = append(inFileButNotConfig, fileKey)
 		}
 	}
@@ -226,11 +228,92 @@ tx-index.psql-conn`, "\n")
 	s.Assert().Len(inFileButNotConfig, 0, "In file, but not config.")
 }
 
-func stringsContains(l []string, s string) bool {
-	for _, t := range l {
-		if s == t {
-			return true
+func (s *LegacyTestSuite) TestRead34FileWith35Struct() {
+	v34 := v34config.DefaultConfig()
+	confFile := filepath.Join(s.Home, "config.toml")
+	v34config.WriteConfigFile(confFile, v34)
+
+	vpr := viper.New()
+	vpr.SetConfigFile(confFile)
+	err := vpr.ReadInConfig()
+	s.Require().NoError(err, "reading config into viper")
+
+	v35 := v35config.DefaultConfig()
+	err = vpr.Unmarshal(v35)
+	s.Require().NoError(err, "unmarshaling conf from viper")
+
+	otherKeys := make([]string, 0, len(v35.Other))
+	for key := range v35.Other {
+		otherKeys = append(otherKeys, key)
+	}
+	sortKeys(otherKeys)
+	for _, key := range otherKeys {
+		val := v35.Other[key]
+		fmt.Printf("%s: %#v\n", key, val)
+	}
+	s.Assert().Len(otherKeys, 0, "other keys")
+}
+
+func (s *LegacyTestSuite) TestRead34FileWithMap() {
+	v34 := v34config.DefaultConfig()
+	confFile := filepath.Join(s.Home, "config.toml")
+	v34config.WriteConfigFile(confFile, v34)
+
+	vpr := viper.New()
+	vpr.SetConfigFile(confFile)
+	err := vpr.ReadInConfig()
+	s.Require().NoError(err, "reading config into viper")
+
+	v35 := map[string]interface{}{}
+	err = vpr.Unmarshal(&v35)
+	s.Require().NoError(err, "unmarshaling conf from viper")
+
+	printMap := func(header string, m map[string]interface{}) []string {
+		keys := make([]string, 0, len(m))
+		for key := range m {
+			keys = append(keys, key)
+		}
+		sortKeys(keys)
+		fmt.Printf("%s:\n", header)
+		for _, key := range keys {
+			fmt.Printf("%s: %#v\n", key, m[key])
+		}
+		return keys
+	}
+	printMapStr := func(header string, m map[string]string) []string {
+		keys := make([]string, 0, len(m))
+		for key := range m {
+			keys = append(keys, key)
+		}
+		sortKeys(keys)
+		fmt.Printf("%s:\n", header)
+		for _, key := range keys {
+			fmt.Printf("%s: \"%s\"\n", key, m[key])
+		}
+		return keys
+	}
+
+	v35Keys := printMap("base", v35)
+	s.Assert().Len(v35Keys, 0, "base keys")
+
+	v35Consensus := v35["consensus"].(map[string]interface{})
+	v35ConsensusKeys := printMap("consensus", v35Consensus)
+	s.Assert().Len(v35ConsensusKeys, 0, "consensus keys")
+
+	v35Flat := flattenMap(v35)
+	printMapStr("flattened", v35Flat)
+}
+
+func flattenMap(m map[string]interface{}) map[string]string {
+	rv := map[string]string{}
+	for key, val := range m {
+		if valm, ok := val.(map[string]interface{}); ok {
+			for subkey, subval := range flattenMap(valm) {
+				rv[key+"."+subkey] = subval
+			}
+		} else {
+			rv[key] = fmt.Sprintf("%v", val)
 		}
 	}
-	return false
+	return rv
 }
