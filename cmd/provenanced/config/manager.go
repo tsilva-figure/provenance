@@ -182,35 +182,44 @@ func writeUnpackedConfig(
 ) {
 	mustEnsureConfigDir(cmd)
 	if appConfig != nil {
-		confFile := GetFullPathToAppConf(cmd)
-		if verbose {
-			cmd.Printf("Writing app config to: %s ... ", confFile)
-		}
-		serverconfig.WriteConfigFile(confFile, appConfig)
-		appConfigIndexEventsWorkAround(confFile, appConfig)
-		if verbose {
-			cmd.Printf("Done.\n")
-		}
+		writeUnpackedAppConfigFile(cmd, GetFullPathToAppConf(cmd), appConfig, verbose)
 	}
 	if tmConfig != nil {
-		confFile := GetFullPathToTmConf(cmd)
-		if verbose {
-			cmd.Printf("Writing tendermint config to: %s ... ", confFile)
-		}
-		tmconfig.WriteConfigFile(confFile, tmConfig)
-		if verbose {
-			cmd.Printf("Done.\n")
-		}
+		writeUnpackedTMConfigFile(cmd, GetFullPathToTmConf(cmd), tmConfig, verbose)
 	}
 	if clientConfig != nil {
-		confFile := GetFullPathToClientConf(cmd)
-		if verbose {
-			cmd.Printf("Writing client config to: %s ... ", confFile)
-		}
-		WriteConfigToFile(confFile, clientConfig)
-		if verbose {
-			cmd.Printf("Done.\n")
-		}
+		writeUnpackedClientConfigFile(cmd, GetFullPathToClientConf(cmd), clientConfig, verbose)
+	}
+}
+
+func writeUnpackedAppConfigFile(cmd *cobra.Command, path string, config *serverconfig.Config, verbose bool) {
+	if verbose {
+		cmd.Printf("Writing app config to: %s ... ", path)
+	}
+	serverconfig.WriteConfigFile(path, config)
+	appConfigIndexEventsWorkAround(path, config)
+	if verbose {
+		cmd.Printf("Done.\n")
+	}
+}
+
+func writeUnpackedTMConfigFile(cmd *cobra.Command, path string, config *tmconfig.Config, verbose bool) {
+	if verbose {
+		cmd.Printf("Writing tendermint config to: %s ... ", path)
+	}
+	tmconfig.WriteConfigFile(path, config)
+	if verbose {
+		cmd.Printf("Done.\n")
+	}
+}
+
+func writeUnpackedClientConfigFile(cmd *cobra.Command, path string, config *ClientConfig, verbose bool) {
+	if verbose {
+		cmd.Printf("Writing client config to: %s ... ", path)
+	}
+	WriteConfigToFile(path, config)
+	if verbose {
+		cmd.Printf("Done.\n")
 	}
 }
 
@@ -317,7 +326,12 @@ func generateAndWritePackedConfig(
 	for key, info := range MakeUpdatedFieldMap(defaultConf, allConf, true) {
 		packed[key] = unquote(info.IsNow)
 	}
-	packedJSON, err := json.MarshalIndent(packed, "", "  ")
+	writePackedConfig(cmd, packed, verbose)
+}
+
+// writePackedConfig writes the packed config json file using the packedConfig map.
+func writePackedConfig(cmd *cobra.Command, packedConfig map[string]string, verbose bool) {
+	packedJSON, err := json.MarshalIndent(packedConfig, "", "  ")
 	if err != nil {
 		panic(err)
 	}
@@ -402,65 +416,71 @@ func LoadConfigFromFiles(cmd *cobra.Command) error {
 
 // loadUnpackedConfig attempts to read the unpacked config files and apply them to the appropriate contexts.
 func loadUnpackedConfig(cmd *cobra.Command) error {
-	appConfFile := GetFullPathToAppConf(cmd)
-	tmConfFile := GetFullPathToTmConf(cmd)
-	clientConfFile := GetFullPathToClientConf(cmd)
-
 	// Both the server context and client context should be using the same Viper, so this is good for both.
 	vpr := server.GetServerContextFromCmd(cmd).Viper
 
-	// Load the tendermint config if it exists, or else defaults.
-	switch _, err := os.Stat(tmConfFile); {
-	case os.IsNotExist(err):
-		lerr := addFieldMapToViper(vpr, MakeFieldValueMap(tmconfig.DefaultConfig(), false))
-		if lerr != nil {
-			return fmt.Errorf("tendermint config file load error: %v", lerr)
-		}
-	case err != nil:
-		return fmt.Errorf("tendermint config file stat error: %v", err)
-	default:
-		vpr.SetConfigFile(tmConfFile)
-		rerr := vpr.MergeInConfig()
-		if rerr != nil {
-			return fmt.Errorf("tendermint config file read error: %v", rerr)
-		}
+	if err := loadUnpackedTMConfig(vpr, GetFullPathToTmConf(cmd)); err != nil {
+		return err
+	}
+	// TODO: Remove this once mainnet has been updated to Tendermint v0.35.
+	if merr := MigrateUnpackedTMConfigTo35IfNeeded(cmd, vpr); merr != nil {
+		return fmt.Errorf("could not migrate tendermint config to v0.35 format: %v", merr)
 	}
 
-	// Load the app/cosmos config if it exists, or else defaults.
-	switch _, err := os.Stat(appConfFile); {
-	case os.IsNotExist(err):
-		lerr := addFieldMapToViper(vpr, MakeFieldValueMap(serverconfig.DefaultConfig(), false))
-		if lerr != nil {
-			return fmt.Errorf("app config load error: %v", lerr)
-		}
-	case err != nil:
-		return fmt.Errorf("app config file stat error: %v", err)
-	default:
-		vpr.SetConfigFile(appConfFile)
-		merr := vpr.MergeInConfig()
-		if merr != nil {
-			return fmt.Errorf("app config file merge error: %v", merr)
-		}
+	if err := loadUnpackedAppConfig(vpr, GetFullPathToAppConf(cmd)); err != nil {
+		return err
 	}
 
-	// Load the client config if it exists, or else defaults.
-	switch _, err := os.Stat(clientConfFile); {
-	case os.IsNotExist(err):
-		lerr := addFieldMapToViper(vpr, MakeFieldValueMap(DefaultClientConfig(), false))
-		if lerr != nil {
-			return fmt.Errorf("client config file load error: %v", lerr)
-		}
-	case err != nil:
-		return fmt.Errorf("client config file stat error: %v", err)
-	default:
-		vpr.SetConfigFile(clientConfFile)
-		rerr := vpr.MergeInConfig()
-		if rerr != nil {
-			return fmt.Errorf("client config file read error: %v", rerr)
-		}
+	if err := loadUnpackedClientConfig(vpr, GetFullPathToClientConf(cmd)); err != nil {
+		return err
 	}
 
 	return applyConfigsToContexts(cmd)
+}
+
+func loadUnpackedTMConfig(vpr *viper.Viper, tmConfFile string) error {
+	defaultTMConfigMaker := func() interface{} { return tmconfig.DefaultConfig() }
+	if err := loadUnpackedConfigFromFileOrDefaults(vpr, tmConfFile, defaultTMConfigMaker); err != nil {
+		return fmt.Errorf("tendermint config %v", err)
+	}
+	return nil
+}
+
+func loadUnpackedAppConfig(vpr *viper.Viper, appConfFile string) error {
+	defaultAppConfigMaker := func() interface{} { return serverconfig.DefaultConfig() }
+	if err := loadUnpackedConfigFromFileOrDefaults(vpr, appConfFile, defaultAppConfigMaker); err != nil {
+		return fmt.Errorf("app config %v", err)
+	}
+	return  nil
+}
+
+func loadUnpackedClientConfig(vpr *viper.Viper, clientConfFile string) error {
+	defaultClientConfigMaker := func() interface{} { return DefaultClientConfig() }
+	if err := loadUnpackedConfigFromFileOrDefaults(vpr, clientConfFile, defaultClientConfigMaker); err != nil {
+		return fmt.Errorf("client config %v", err)
+	}
+	return nil
+}
+
+// loadUnpackedConfigFromFileOrDefaults reads the configPath file into viper.
+// If the configPath doesn't exist, the result of defaultMaker is used to load the defaults into viper.
+func loadUnpackedConfigFromFileOrDefaults(vpr *viper.Viper, configPath string, defaultMaker func() interface{}) error {
+	switch _, err := os.Stat(configPath); {
+	case os.IsNotExist(err):
+		lerr := addFieldMapToViper(vpr, MakeFieldValueMap(defaultMaker(), false))
+		if lerr != nil {
+			return fmt.Errorf("file load error: %v", lerr)
+		}
+	case err != nil:
+		return fmt.Errorf("file stat error: %v", err)
+	default:
+		vpr.SetConfigFile(configPath)
+		rerr := vpr.MergeInConfig()
+		if rerr != nil {
+			return fmt.Errorf("file read error: %v", rerr)
+		}
+	}
+	return nil
 }
 
 // loadPackedConfig attempts to read the packed config and applies it to the appropriate contexts.
@@ -479,6 +499,8 @@ func loadPackedConfig(cmd *cobra.Command) error {
 		if jerr != nil {
 			return fmt.Errorf("packed config file parse error: %v", jerr)
 		}
+		// TODO: Remove this once mainnet has been updated to Tendermint v0.35.
+		MigratePackedConfigToTM35IfNeeded(cmd, packedConf)
 	}
 
 	// Start with the defaults
@@ -537,6 +559,7 @@ func loadPackedConfig(cmd *cobra.Command) error {
 	return applyConfigsToContexts(cmd)
 }
 
+// addFieldMapToViper loads the given FieldValueMap into viper.
 func addFieldMapToViper(vpr *viper.Viper, fvmap FieldValueMap) error {
 	configMap := make(map[string]interface{})
 	for k, v := range fvmap {
@@ -564,6 +587,8 @@ func addFieldMapToViper(vpr *viper.Viper, fvmap FieldValueMap) error {
 	return vpr.MergeConfigMap(configMap)
 }
 
+// applyConfigsToContexts applies the configurations (that have been loaded into viper)
+// to the client and server contexts.
 func applyConfigsToContexts(cmd *cobra.Command) error {
 	var err error
 	// Apply what viper now has to the client context.
