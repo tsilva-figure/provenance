@@ -284,12 +284,12 @@ p2p.send-rate
 p2p.unconditional-peer-ids
 p2p.upnp
 p2p.use-legacy
-priv-validator.certificate-authority
 priv-validator.client-certificate-file
+priv-validator.client-key-file
 priv-validator.key-file
 priv-validator.laddr
+priv-validator.root-ca-file
 priv-validator.state-file
-priv-validator.validator-client-key-file
 rpc.cors-allowed-headers
 rpc.cors-allowed-methods
 rpc.cors-allowed-origins
