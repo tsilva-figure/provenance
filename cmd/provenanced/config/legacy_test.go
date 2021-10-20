@@ -16,6 +16,7 @@ import (
 type LegacyTestSuite struct {
 	suite.Suite
 
+	// Home is a temp directory that can be used to store files for a test.
 	Home string
 }
 
@@ -37,35 +38,98 @@ func stringSliceContains(ss []string, s string) bool {
 	return false
 }
 
+func flattenMap(m map[string]interface{}) map[string]string {
+	rv := map[string]string{}
+	for key, val := range m {
+		if valm, ok := val.(map[string]interface{}); ok {
+			for subkey, subval := range flattenMap(valm) {
+				rv[key+"."+subkey] = subval
+			}
+		} else {
+			rv[key] = fmt.Sprintf("%v", val)
+		}
+	}
+	return rv
+}
+
 func (s *LegacyTestSuite) TestCompare34and35() {
 	v34 := v34config.DefaultConfig()
 	v35 := v35config.DefaultConfig()
 
+	knownChanges34To35 := map[string]string{
+		"fast_sync": "blocksync.enable",
+		"fastsync.version": "blocksync.version",
+		"priv_validator_key_file": "priv-validator.key-file",
+		"priv_validator_laddr": "priv-validator.laddr",
+		"priv_validator_state_file": "priv-validator.state-file",
+		"p2p.seed_mode": "mode",
+		"statesync.chunk_fetchers": "statesync.fetchers",
+		"tx_index.psql-conn": "tx-index.psql-conn",
+	}
+	knownChanges34 := []string{}
+	knownChanges35To34 := map[string]string{}
+	for k34, k35 := range knownChanges34To35 {
+		knownChanges34 = append(knownChanges34, k34)
+		knownChanges35To34[k35] = k34
+	}
+	sortKeys(knownChanges34)
+
 	v34Map := MakeFieldValueMap(v34, true)
 	v35Map := MakeFieldValueMap(v35, true)
+
+	for _, k34 := range knownChanges34 {
+		k35 := knownChanges34To35[k34]
+		_, ok34 := v34Map[k34]
+		_, ok35 := v35Map[k35]
+		s.Assert().True(ok34, "known change v0.34 key [%s] not found", k34)
+		s.Assert().True(ok35, "known change v0.35 key [%s] not found", k35)
+	}
+
+	v34Types := map[string]string{}
+	v35Types := map[string]string{}
 
 	unchanged := []string{}
 	added := []string{}
 	removed := []string{}
 	toDashes := []string{}
+	asDashes := []string{}
+
+	stringsContains := func(vals []string, lookFor string) bool {
+		for _, val := range vals {
+			if val == lookFor {
+				return true
+			}
+		}
+		return false
+	}
 
 	for key34 := range v34Map {
+		v34Types[key34] = v34Map[key34].Type().String()
+		if _, ok := knownChanges34To35[key34]; ok {
+			continue
+		}
 		if _, ok := v35Map[key34]; ok {
 			unchanged = append(unchanged, key34)
 			continue
 		}
-		if _, ok := v35Map[strings.Replace(key34, "_", "-", -1)]; ok {
+		key35 := strings.ReplaceAll(key34, "_", "-")
+		if _, ok := v35Map[key35]; ok {
 			toDashes = append(toDashes, key34)
+			asDashes = append(asDashes, key35)
 		} else {
 			removed = append(removed, key34)
 		}
 	}
 
 	for key35 := range v35Map {
+		v35Types[key35] = v35Map[key35].Type().String()
+		if _, ok := knownChanges35To34[key35]; ok {
+			continue
+		}
 		if _, ok := v34Map[key35]; ok {
 			continue
 		}
-		if _, ok := v34Map[strings.Replace(key35, "-", "_", -1)]; ok {
+		if stringsContains(asDashes, key35) {
 			continue
 		}
 		added = append(added, key35)
@@ -76,8 +140,45 @@ func (s *LegacyTestSuite) TestCompare34and35() {
 	sortKeys(removed)
 	sortKeys(toDashes)
 
+	toV35Key := func(key34 string) string {
+		if key35, ok := knownChanges34To35[key34]; ok {
+			return key35
+		}
+		if stringsContains(removed, key34) {
+			return ""
+		}
+		return strings.ReplaceAll(key34, "_", "-")
+	}
+
+	toCompareTypes := []string{}
+	toCompareTypes = append(toCompareTypes, knownChanges34...)
+	toCompareTypes = append(toCompareTypes, unchanged...)
+	toCompareTypes = append(toCompareTypes, toDashes...)
+	sortKeys(toCompareTypes)
+	typeChanges := []string{}
+	for _, key34 := range toCompareTypes {
+		key35 := toV35Key(key34)
+		if len(key35) == 0 {
+			continue
+		}
+		type34 := v34Types[key34]
+		type35 := v35Types[key35]
+		if type34 != type35 {
+			typeChanges = append(typeChanges, fmt.Sprintf("%s %s -> %s %s", key34, type34, key35, type35))
+		}
+	}
+
+	knownChanges := make([]string, len(knownChanges34))
+	for i, key34 := range knownChanges34 {
+		knownChanges[i] = fmt.Sprintf("%s -> %s", key34, knownChanges34To35[key34])
+	}
+	dashChanges := make([]string, len(toDashes))
+	for i, key34 := range toDashes {
+		dashChanges[i] = fmt.Sprintf("%s -> %s", key34, strings.ReplaceAll(key34, "_", "-"))
+	}
+
 	printStrings := func(header string, vals []string) {
-		fmt.Printf("%s:\n", header)
+		fmt.Printf("%s (%d):\n", header, len(vals))
 		for _, val := range vals {
 			fmt.Printf("  %s\n", val)
 		}
@@ -87,8 +188,23 @@ func (s *LegacyTestSuite) TestCompare34and35() {
 	printStrings("unchanged", unchanged)
 	printStrings("added", added)
 	printStrings("removed", removed)
-	printStrings("toDashes", toDashes)
-	s.T().Fail()
+	printStrings("dash changes", dashChanges)
+	printStrings("non-trivial changes", knownChanges)
+	printStrings("type changes", typeChanges)
+
+	printStringsAsVar := func(varName string, vals []string) {
+		fmt.Printf("var %s = []string{\n", varName)
+		fmt.Printf("\t\"%s\"\n", strings.Join(vals, `", "`))
+		fmt.Printf("}\n")
+	}
+	printStringsAsVar("addedKeys", added)
+	printStringsAsVar("removedKeys", removed)
+	printStringsAsVar("toDashesKeys", toDashes)
+	fmt.Printf("var changedKeys = map[string]string{\n")
+	for k, v := range knownChanges34To35 {
+		fmt.Printf("\t\"%s\": \"%s\"\n", k, v)
+	}
+	fmt.Printf("}\n")
 }
 
 func (s *LegacyTestSuite) TestCompareConfigToFileEntries() {
@@ -302,18 +418,4 @@ func (s *LegacyTestSuite) TestRead34FileWithMap() {
 
 	v35Flat := flattenMap(v35)
 	printMapStr("flattened", v35Flat)
-}
-
-func flattenMap(m map[string]interface{}) map[string]string {
-	rv := map[string]string{}
-	for key, val := range m {
-		if valm, ok := val.(map[string]interface{}); ok {
-			for subkey, subval := range flattenMap(valm) {
-				rv[key+"."+subkey] = subval
-			}
-		} else {
-			rv[key] = fmt.Sprintf("%v", val)
-		}
-	}
-	return rv
 }
