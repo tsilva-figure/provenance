@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -99,9 +100,7 @@ func MigrateUnpackedTMConfigTo35IfNeeded(cmd *cobra.Command, vpr *viper.Viper) e
 		if len(oldKey) == 0 {
 			continue
 		}
-		oldValue := vpr.GetString(oldKey)
-		// TODO: Make sure that GetString is returning correctly for
-		//       various types as needed for SetFromString.
+		oldValue := getValueStringFromViper(vpr, oldKey)
 		newValue := getMigratedValue(oldKey, oldValue)
 		err := tmConfigMap.SetFromString(newKey, newValue)
 		if err != nil {
@@ -192,6 +191,38 @@ func getOldKey(newKey string) string {
 		}
 	}
 	return newKey
+}
+
+// getValueStringFromViper extracts the string representation of a key from Viper.
+// This is needed for the []string entries because viper doesn't know enough just by
+// reading a file, to know what type is expected for a value.
+func getValueStringFromViper(vpr *viper.Viper, key string) string {
+	val := vpr.Get(key)
+	switch key {
+	case "statesync.rpc-servers", "statesync.rpc_servers":
+		// This one is in the config file as a string, but the config object as a []string.
+		// The entries are comma delimited in the string.
+		valStr := val.(string)
+		stringVals := []string{}
+		if len(valStr) > 0 {
+			for _, str := range strings.Split(valStr, ",") {
+				stringVals = append(stringVals, strings.TrimSpace(str))
+			}
+		}
+		val = stringVals
+	case "rpc.cors-allowed-headers", "rpc.cors-allowed-methods", "rpc.cors-allowed-origins", "tx-index.indexer",
+	"rpc.cors_allowed_headers", "rpc.cors_allowed_methods", "rpc.cors_allowed_origins", "tx_index.indexer":
+		// These entries are all []string in both the config object and file.
+		// However, viper reads them in as []interface{}, and we need to help tell it
+		// that they are []string values.
+		valSlice := val.([]interface{})
+		stringVals := make([]string, len(valSlice))
+		for i, v := range valSlice {
+			stringVals[i] = v.(string)
+		}
+		val = stringVals
+	}
+	return unquote(GetStringFromValue(reflect.ValueOf(val)))
 }
 
 // getMigratedValue converts the oldValue to a string representation of the v0.35 data type for the oldKey field.
