@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -50,6 +51,34 @@ func flattenMap(m map[string]interface{}) map[string]string {
 		}
 	}
 	return rv
+}
+
+func (s *LegacyTestSuite) TestMultipleStateSyncRPCServers() {
+	conf := v35config.DefaultConfig()
+	conf.StateSync.RPCServers = []string{"host.example.com:1", "host.example.com:2", "host.example.com:3"}
+	fmt.Printf("initial statesync.rpc-servers = %#v\n", conf.StateSync.RPCServers)
+
+	confDir := filepath.Join(s.Home, "config")
+	s.Require().NoError(os.MkdirAll(confDir, os.ModePerm), "creating config directory")
+	v35config.WriteConfigFile(s.Home, conf)
+
+	confFile := filepath.Join(confDir, "config.toml")
+	vpr := viper.New()
+	vpr.SetConfigFile(confFile)
+	s.Require().NoError(vpr.ReadInConfig(), "reading config from viper")
+
+	conf2 := v35config.DefaultConfig()
+	s.Require().NoError(vpr.Unmarshal(conf2), "unmarshalling config from viper")
+	fmt.Printf("   read statesync.rpc-servers = %#v\n", conf2.StateSync.RPCServers)
+	s.Require().Equal(conf.StateSync.RPCServers, conf2.StateSync.RPCServers, "statesync.rpc-servers")
+
+	bz, rerr := os.ReadFile(confFile)
+	s.Require().NoError(rerr, "opening config file for reading")
+	for _, line := range strings.Split(string(bz), "\n") {
+		if len(line) >= 11 && line[:11] == "rpc-servers" {
+			fmt.Printf("   file statesync.%s\n", line)
+		}
+	}
 }
 
 func (s *LegacyTestSuite) TestCompare34and35() {
@@ -344,6 +373,92 @@ tx-index.psql-conn`, "\n")
 	s.Assert().Len(inFileButNotConfig, 0, "In file, but not config.")
 }
 
+func (s *LegacyTestSuite) TestPrintDefaultConfigAndTypes() {
+	conf := v35config.DefaultConfig()
+	confMap := MakeFieldValueMap(conf, false)
+	removeUndesirableTmConfigEntries(confMap)
+	confKeys := confMap.GetSortedKeys()
+
+	byType := map[string][]string{}
+
+	for _, key := range confKeys {
+		val := confMap.GetStringOf(key)
+		valType := fmt.Sprintf("%T", confMap[key].Interface())
+		fmt.Printf("%s %s = %s\n", key, valType, val)
+		byType[valType] = append(byType[valType], fmt.Sprintf("%s = %s", key, val))
+	}
+	fmt.Printf("\n")
+
+	valTypes := []string{}
+	for valType := range byType {
+		valTypes = append(valTypes, valType)
+	}
+	sortKeys(valTypes)
+
+	for _, valType := range valTypes {
+		fmt.Printf("%s entries (%d):\n", valType, len(byType[valType]))
+		for _, entry := range byType[valType] {
+			fmt.Printf("\t%s\n", entry)
+		}
+	}
+	fmt.Printf("\n")
+}
+
+func (s *LegacyTestSuite) TestCompareConfigToFileEntries2() {
+	confDir := filepath.Join(s.Home, "config")
+	s.Require().NoError(os.MkdirAll(confDir, os.ModePerm), "creating config directory")
+
+	v35Config := v35config.DefaultConfig()
+	v35config.WriteConfigFile(s.Home, v35Config)
+	confFile := filepath.Join(confDir, "config.toml")
+
+	vpr := viper.New()
+	vpr.SetConfigFile(confFile)
+	s.Require().NoError(vpr.ReadInConfig(), "reading config into viper")
+
+	v35ConfigObjMap := MakeFieldValueMap(v35Config, true)
+	removeUndesirableTmConfigEntries(v35ConfigObjMap)
+	objSettings := map[string]string{}
+	objKeys := []string{}
+	for key := range v35ConfigObjMap {
+		objKeys = append(objKeys, key)
+		objSettings[key] = unquote(v35ConfigObjMap.GetStringOf(key))
+	}
+
+	fileKeys := vpr.AllKeys()
+	sortKeys(fileKeys)
+	fileSettings := map[string]string{}
+	for _, key := range fileKeys {
+		fileSettings[key] = getValueStringFromViper(vpr, key)
+	}
+
+	inObjNotFile := []string{}
+	inFileNotObj := []string{}
+	different := []string{}
+
+	for _, key := range objKeys {
+		fileValue, ok := fileSettings[key]
+		if !ok {
+			inObjNotFile = append(inObjNotFile, key)
+			continue
+		}
+		objValue := objSettings[key]
+		if fileValue != objValue {
+			different = append(different, fmt.Sprintf("%s: (%s) != (%s)", key, objValue, fileValue))
+		}
+	}
+
+	for _, key := range fileKeys {
+		if _, ok := objSettings[key]; !ok {
+			inFileNotObj = append(inFileNotObj, key)
+		}
+	}
+
+	s.Assert().Len(inObjNotFile, 0, "In object but not file")
+	s.Assert().Len(inFileNotObj, 0, "In file but not object")
+	s.Assert().Len(different, 0, "Different")
+}
+
 func (s *LegacyTestSuite) TestRead34FileWith35Struct() {
 	v34 := v34config.DefaultConfig()
 	confFile := filepath.Join(s.Home, "config.toml")
@@ -367,7 +482,7 @@ func (s *LegacyTestSuite) TestRead34FileWith35Struct() {
 		val := v35.Other[key]
 		fmt.Printf("%s: %#v\n", key, val)
 	}
-	s.Assert().Len(otherKeys, 0, "other keys")
+	s.Assert().Len(otherKeys, 14, "other keys")
 }
 
 func (s *LegacyTestSuite) TestRead34FileWithMap() {
@@ -410,11 +525,11 @@ func (s *LegacyTestSuite) TestRead34FileWithMap() {
 	}
 
 	v35Keys := printMap("base", v35)
-	s.Assert().Len(v35Keys, 0, "base keys")
+	s.Assert().Len(v35Keys, 22, "base keys")
 
 	v35Consensus := v35["consensus"].(map[string]interface{})
 	v35ConsensusKeys := printMap("consensus", v35Consensus)
-	s.Assert().Len(v35ConsensusKeys, 0, "consensus keys")
+	s.Assert().Len(v35ConsensusKeys, 14, "consensus keys")
 
 	v35Flat := flattenMap(v35)
 	printMapStr("flattened", v35Flat)
